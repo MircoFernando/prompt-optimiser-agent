@@ -259,7 +259,7 @@ class TokenCounter:
 def get_api_key(service: str) -> str:
     """
     Get API key for specified service.
-
+ 
     Args:
         service: Service name (openai, openrouter, tavily)
 
