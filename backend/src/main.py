@@ -1,8 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-from src.api.routers import optimize
-
+from src.api.routers.router import router
+  
 load_dotenv()
 
 app = FastAPI(title="Prompt Optimizer Enterprise API")
@@ -17,7 +17,7 @@ allow_headers=["*"],
 )
 
 # Register the routers
-app.include_router(optimize.router)
+app.include_router(router)
 
 @app.get("/")
 def health_check():

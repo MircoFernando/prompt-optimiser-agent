@@ -3,8 +3,8 @@ import time
 from typing import TypedDict, Literal, Annotated
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import START, END, StateGraph
-from utils.config import get_config
-from utils.llm_services import create_llm_provider
+from src.utils.config import get_config
+from src.utils.llm_services import create_llm_provider
 
 # Initialize configurations
 config = get_config()
@@ -20,7 +20,7 @@ class ReflectionState(TypedDict):
     max_iterations: int
     total_tokens: int
 
-def draft_node(state: ReflectionState):
+async def draft_node(state: ReflectionState):
     """Generate initial draft response."""
     response = llm.generate(
         prompt=state["query"],
@@ -51,7 +51,7 @@ def draft_node(state: ReflectionState):
     }
     
 
-def critic_node(state: ReflectionState):
+async def critic_node(state: ReflectionState):
     """Critique the current draft and decide if it's sufficient."""
     iteration = state["iteration"] + 1
 
@@ -96,7 +96,7 @@ def critic_node(state: ReflectionState):
         "total_tokens": state["total_tokens"] + response["total_tokens"],
     }
     
-def assessment_node(state: ReflectionState):
+async def assessment_node(state: ReflectionState):
     """Assess the current draft and critiq decide to loop or respond"""
  
     print(f"\n{'=' * 70}")
@@ -143,7 +143,7 @@ def assessment_node(state: ReflectionState):
     }
 
 
-def revise_node(state: ReflectionState) -> dict:
+async def revise_node(state: ReflectionState) -> dict:
     """Revise draft based on critique."""
     print(f"\n{'=' * 70}")
     print(f"NODE: revise (iteration {state['iteration']})")
@@ -198,10 +198,11 @@ workflow.add_node("Critic", critic_node)
 workflow.add_node("Assess", assessment_node)
 workflow.add_node("Revise", revise_node)
 
+
 workflow.add_edge(START, "Draft")
 workflow.add_edge("Draft", "Critic")
 workflow.add_edge("Critic", "Assess")
-workflow.add_edge("Assess", should_continue, {
+workflow.add_conditional_edges("Assess", should_continue, {
     "is_sufficient" : END,
     "needs_improvement" : "Revise"
 })
@@ -209,12 +210,22 @@ workflow.add_edge("Revise", "Critic")
 
 langgraph_app = workflow.compile()
 
-def execute_langgraph_optimization(user_input: str, max_iterations: int):
+async def execute_langgraph_optimization(user_input: str, max_iterations: int = 3):
+    """Run the LangGraph workflow to optimize a prompt.
+
+    Returns (optimized_text, latency_seconds)
+    """
     start_time = time.time()
-    result = langgraph_app.invoke({
-        "draft": user_input, 
-        "iterations": 0,
-        "max_iterations": max_iterations
-    })
+    initial_state = {
+        "query": user_input,
+        "current_draft": "",
+        "critique": "",
+        "revision_history": [],
+        "is_sufficient": False,
+        "iteration": 0,
+        "max_iterations": max_iterations,
+        "total_tokens": 0,
+    }
+    result = langgraph_app.invoke(initial_state)
     latency = round(time.time() - start_time, 2)
-    return result["draft"], latency
+    return result.get("current_draft", ""), latency
