@@ -13,8 +13,8 @@ class OptimizerService:
     #     )
 
     @staticmethod
-    def run_langgraph(request: PromptRequest) -> OptimizationResponse:
-        draft, latency = execute_langgraph_optimization(request.initial_prompt, request.max_iterations)
+    async def run_langgraph(request: PromptRequest) -> OptimizationResponse:
+        draft, latency = await execute_langgraph_optimization(request.initial_prompt, request.max_iterations)
         return OptimizationResponse(
             optimized_draft=draft,
             latency_seconds=latency,

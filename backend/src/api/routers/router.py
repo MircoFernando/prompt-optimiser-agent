@@ -11,4 +11,4 @@ router = APIRouter(prefix="/api/v1/optimize", tags=["Optimizer"])
 
 @router.post("/langgraph", response_model=OptimizationResponse)
 async def optimize_langgraph(request: PromptRequest):
-    return OptimizerService.run_langgraph(request)
+    return await OptimizerService.run_langgraph(request)

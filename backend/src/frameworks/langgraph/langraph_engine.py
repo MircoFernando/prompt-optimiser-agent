@@ -203,7 +203,7 @@ workflow.add_edge(START, "Draft")
 workflow.add_edge("Draft", "Critic")
 workflow.add_edge("Critic", "Assess")
 workflow.add_conditional_edges("Assess", should_continue, {
-    "is_sufficient" : END,
+    "sufficient" : END,
     "needs_improvement" : "Revise"
 })
 workflow.add_edge("Revise", "Critic")
@@ -226,6 +226,6 @@ async def execute_langgraph_optimization(user_input: str, max_iterations: int = 
         "max_iterations": max_iterations,
         "total_tokens": 0,
     }
-    result = langgraph_app.invoke(initial_state)
+    result = await langgraph_app.ainvoke(initial_state)
     latency = round(time.time() - start_time, 2)
     return result.get("current_draft", ""), latency
