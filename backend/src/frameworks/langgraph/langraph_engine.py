@@ -1,9 +1,10 @@
 import operator
 import time
-from typing import TypedDict, Literal, Annotated
+from typing import TypedDict, Annotated
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import START, END, StateGraph
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.memory import MemorySaver  
+from langgraph.graph.message import add_messages
 from src.utils.config import get_config
 from src.utils.llm_services import create_llm_provider
 
@@ -12,18 +13,19 @@ config = get_config()
 llm = create_llm_provider()
 
 # Initialize the checkpointer
-memory = MemorySaver()
+checkpointer = MemorySaver()
 
 # Define constants for identifying the interaction context
 APP_NAME = "propmt_optimizer_app"
 USER_ID = "user_1"
-SESSION_ID = "session_001" # Using a fixed ID for simplicity
+SESSION_ID = "1" # Using a fixed ID for simplicity
 
 class ReflectionState(TypedDict):
     query: str
     current_draft: str
     critique: str
     revision_history: Annotated[list, operator.add]  # appends each revised draft
+    messages: Annotated[list, add_messages]  # accumulates all messages for context
     is_sufficient: bool
     iteration: int
     max_iterations: int
@@ -32,7 +34,7 @@ class ReflectionState(TypedDict):
 async def draft_node(state: ReflectionState):
     """Generate initial draft response."""
     response = llm.generate(
-        prompt=state["query"],
+        prompt=f"Query: {state['query']}\n\nPrevious Chats: {state['revision_history']}", # Pass both the original query and the revision history for context
         system_prompt=(
             "You are an Expert AI Prompt Engineer specializing in designing production-ready system prompts for Large Language Models." 
             "Your task is to take a user's rough idea OR a Critic's feedback, and transform it into a highly structured, rigorous system prompt."
@@ -217,7 +219,7 @@ workflow.add_conditional_edges("Assess", should_continue, {
 })
 workflow.add_edge("Revise", "Critic")
 
-langgraph_app = workflow.compile(checkpoint_saver=memory)
+langgraph_app = workflow.compile(checkpointer=checkpointer)
 
 async def execute_langgraph_optimization(user_input: str, max_iterations: int = 3, session_id: str = SESSION_ID):
     """Run the LangGraph workflow to optimize a prompt.
@@ -237,6 +239,6 @@ async def execute_langgraph_optimization(user_input: str, max_iterations: int = 
         "max_iterations": max_iterations,
         "total_tokens": 0,
     }
-    result = await langgraph_app.ainvoke(initial_state)
+    result = await langgraph_app.ainvoke(initial_state, config)
     latency = round(time.time() - start_time, 2)
     return result.get("current_draft", ""), latency
