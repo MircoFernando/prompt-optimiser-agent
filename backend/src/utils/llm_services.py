@@ -17,7 +17,7 @@ from openai import (
     RateLimitError,
 )
 
-from backend.src.utils.config import TokenCounter, get_api_key, get_config
+from src.utils.config import TokenCounter, get_api_key, get_config
 
 logger = logging.getLogger(__name__)
 
