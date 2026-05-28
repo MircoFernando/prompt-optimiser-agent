@@ -1,14 +1,20 @@
 import os
 import time
+import asyncio
 from google.adk import Agent
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
+from google.genai import types
 
+# --- Session Management ---
+# Key Concept: SessionService stores conversation history & state.
+# InMemorySessionService is simple, non-persistent storage for this tutorial.
+session_service = InMemorySessionService()
 
-def load_prompt(filename):
-    path = os.path.join(os.path.dirname(__file__), "prompts", filename)
-    with open(path, "r") as f:
-        return f.read()
+# Define constants for identifying the interaction context
+APP_NAME = "propmt_optimizer_app"
+USER_ID = "user_1"
+SESSION_ID = "session_001" # Using a fixed ID for simplicity
 # 
 # Define Agents
 draft_agent = Agent(name="Generator", 
@@ -82,72 +88,113 @@ revise_agent = Agent(name="Reviser", model="gemini-2.5-flash",
             "- Do NOT include the critic's feedback in your output.")
 
 
-def should_continue(session) -> bool:
-    """
-    In ADK, the condition function determines if the loop RUNS AGAIN.
-    Returning False is the exact equivalent of routing to END.
-    """
-    last_assessment = session.get_last_message().text.lower()
+async def call_agent_async(query: str, runner, user_id, session_id) -> str:
+    """Sends a query to the agent and prints the final response."""
+    print(f"\n>>> User Query: {query}")
+
+    # Prepare the user's message in ADK format
+    content = types.Content(role='user', parts=[types.Part(text=query)])
+
+    final_response_text = "Agent did not produce a final response." # Default
+
+    # Key Concept: run_async executes the agent logic and yields Events.
+    # We iterate through events to find the final answer.
+    async for event in runner.run_async(user_id=user_id, session_id=session_id, new_message=content):
     
-    if "sufficient" in last_assessment:
-        return False  # This triggers the LangGraph 'END'
+        # Key Concept: is_final_response() marks the concluding message for the turn.
+        if event.is_final_response():
+            if event.content and event.content.parts:
+                # Assuming text response in the first part
+                final_response_text = event.content.parts[0].text
+            elif event.actions and event.actions.escalate: # Handle potential errors/escalations
+                final_response_text = f"Agent escalated: {event.error_message or 'No specific message.'}"
+            # Add more checks here if needed (e.g., specific error codes)
+            break # Stop processing events once the final response is found
+
+    return final_response_text
+
+async def init_session(app_name:str,user_id:str,session_id:str) -> InMemorySessionService:
     
-    return True
+    # IF the session already exists, reuse it. This allows us to maintain conversation history across multiple calls to call_agent_async within the same optimization loop.
+    if session_service.get_session(app_name=app_name, user_id=user_id, session_id=session_id):
+        print(f"Session with ID '{session_id}' already exists. Reusing existing session.")
+        return session_service.get_session(app_name=app_name, user_id=user_id, session_id=session_id)
+    
+    session =  session_service.create_session(
+        app_name=app_name,
+        user_id=user_id,
+        session_id=session_id
+    )
+    print(f"Session created: App='{app_name}', User='{user_id}', Session='{session_id}'")
+    return session
 
-
-
-
-async def execute_adk_optimization(user_input: str, max_iterations: int = 3):
+async def execute_adk_optimization(user_input: str, max_iterations: int = 3, session_id: str = SESSION_ID):
     start_time = time.time()
     
-    # Initialize session and runner
-    session_service = InMemorySessionService()
-    # Define constants for identifying the interaction context
-    APP_NAME = "prompt_optimizer_app"
-    USER_ID = "user_1"
-    SESSION_ID = "session_001" # Using a fixed ID for simplicity
-
-    # Create the specific session where the conversation will happen
-    session = session_service.create_session(
-        app_name=APP_NAME,
-        user_id=USER_ID,
-        session_id=SESSION_ID
-    )
-    print(f"Session created: App='{APP_NAME}', User='{USER_ID}', Session='{SESSION_ID}'")
+    session = await init_session(APP_NAME,USER_ID,SESSION_ID)
+    
+    print(f"Session created: App='{APP_NAME}', User='{USER_ID}', Session='{session_id}'")
     
     runner = Runner(agent=draft_agent, app_name=APP_NAME,   # Associates runs with our app
-    session_service=session_service) # Uses our session manager)
+    session_service=session_service)  # Use our session management
     
-    draft_response = runner.run(f"Initial Idea: {user_input}")
-    current_draft = draft_response.text
+    draft_response = await call_agent_async(f"Optimize this: {user_input}.",
+                                            runner=runner, 
+                                            user_id=USER_ID, 
+                                            session_id=SESSION_ID)
+    current_draft = draft_response
+    
+    print(f"\nInitial Draft: {current_draft}")
 
     iterations = 0
     
     while iterations < max_iterations:
-        
         # Draft -> Critic
         runner.agent = critic_agent
-        critic_response = runner.run("Review the current draft in the session history and provide feedback.")
+        critic_response = await call_agent_async(f"Critique this draft: {current_draft}",
+                                                 runner=runner,
+                                                    user_id=USER_ID,
+                                                    session_id=SESSION_ID)
         
-        if "APPROVED" in critic_response.text:
-            break
-            
+        print(f"\nCritic Feedback: {critic_response}")
+        
         # Critic -> Assess
         runner.agent = assessment_agent
-        assessment = runner.run("Evaluate the feedback. Is the draft sufficient? Output exactly YES or NO.")
+        assessment = await call_agent_async(f"Assess this critique: {critic_response}",
+                                                 runner=runner,
+                                                    user_id=USER_ID,
+                                                    session_id=SESSION_ID)
+        print(f"\nAssessment: {assessment}")
         
-        if "yes" in assessment.text.lower():
-            break # This is your 'END'
-            
+        assessment_upper = assessment.upper()
+        if "SUFFICIENT: YES" in assessment_upper or "SUFFICIENT:YES" in assessment_upper:
+            break
+        
         # 'needs_improvement' -> Revise
         runner.agent = revise_agent
-        revise_response = runner.run("Apply the critic's feedback and generate a revised draft.")
+        revise_response = await call_agent_async(f"Revise the draft: {current_draft} based on this critique: {critic_response}",
+                                                 runner=runner,
+                                                    user_id=USER_ID,
+                                                    session_id=SESSION_ID)
+        print(f"\nRevised Draft: {revise_response}")
     
-        current_draft = revise_response.text
+        current_draft = revise_response
         
         # Increment to prevent infinite loops (acting as a safety edge)
         iterations += 1
+        print(f"--- End of iteration {iterations} ---")
+        
+    print(f"--- Examining Session Properties ---")
+    print(f"ID (`id`):                {session.id}")
+    print(f"Application Name (`app_name`): {session.app_name}")
+    print(f"User ID (`user_id`):         {session.user_id}")
+    print(f"State (`state`):           {session.state}") # Note: Only shows initial state here
+    print(f"Events (`events`):         {session.events}") # Initially empty
+    print(f"Last Update (`last_update_time`): {session.last_update_time:.2f}")
+    print(f"---------------------------------")
+
 
     latency = round(time.time() - start_time, 2)
+    
     
     return current_draft, latency

@@ -1,0 +1,35 @@
+High-priority (do these for a clean demo)
+
+Use session IDs end-to-end: add session_id to the request DTO and propagate from router.py:1 → agent_services.py:1 → execute_langgraph_optimization(...) / execute_adk_optimization(...) so each client controls the thread used by MemorySaver / InMemorySessionService.
+Make the generator actually use history: include state["revision_history"] (or the last N items / a summary) in the draft prompt so previous revisions affect new drafts — see langraph_engine.py:34-42.
+Fix small correctness issues: ensure f-strings use single quotes inside (no stray quotes/spaces) and that the nodes append to the same revision_history field (you already use Annotated[list, operator.add], which is correct).
+Add a simple session-reset endpoint (e.g., POST /api/v1/optimize/session/reset) to clear memory between demo scenarios so results are reproducible.
+Medium-priority (improve demo quality)
+
+Add explicit logging around checkpoint reads/writes so you can show when memory is loaded vs written (instrument langraph_engine.py and adk/loop.py).
+Token-control: limit history sent to the model (last N chars or summarized text) so latency/costs stay reasonable for a demo.
+Add a small automated test / script that:
+sends prompt A twice and shows ADK vs LangGraph outputs,
+then asks a follow-up referencing the earlier draft and demonstrates memory recall.
+Add an example README snippet showing the two endpoints to call and expected differences.
+Nice-to-have (not required for the demo, but helpful)
+
+Show ephemeral vs persistent memory: point out InMemorySessionService / MemorySaver are ephemeral — add a note in README that production needs Redis/Postgres-backed checkpointer.
+Add a Visual "session inspector" endpoint that returns the current revision_history for a given session id (for live demonstration).
+Add a CLI helper or Postman collection to run the comparison scenarios.
+How to demonstrate (simple manual recipe)
+
+Start server:
+cd backend && .venv/bin/uvicorn src.main:app --reload
+Call ADK once, then ask a follow-up referencing earlier result: compare responses.
+Call LangGraph once, then ask the equivalent follow-up: compare responses.
+Reset session (or use a different session_id) and repeat.
+Metrics to capture during demo
+
+Latency per turn
+Tokens consumed per request
+Number of revisions stored in revision_history
+If you want I can:
+
+implement the session_id field + wire it end-to-end (small patch), or
+add a session-reset endpoint and a short demo script that posts the sequence of prompts and prints both frameworks’ outputs.
