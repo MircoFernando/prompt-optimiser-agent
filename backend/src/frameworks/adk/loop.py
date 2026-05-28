@@ -5,6 +5,7 @@ from google.adk import Agent
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
+from src.utils.config import calculate_prompt_response_tokens
 
 # --- Session Management ---
 # Key Concept: SessionService stores conversation history & state.
@@ -128,20 +129,35 @@ async def init_session(app_name:str,user_id:str,session_id:str) -> InMemorySessi
     print(f"Session created: App='{app_name}', User='{user_id}', Session='{session_id}'")
     return session
 
+
+def clear_adk_session(session_id: str) -> bool:
+    """Clear a session from the in-memory ADK session store."""
+    try:
+        session_service.delete_session(app_name=APP_NAME, user_id=USER_ID, session_id=session_id)
+        return True
+    except Exception:
+        return False
+
 async def execute_adk_optimization(user_input: str, max_iterations: int = 3, session_id: str = SESSION_ID):
     start_time = time.time()
+    input_tokens = 0
+    output_tokens = 0
     
-    session = await init_session(APP_NAME,USER_ID,SESSION_ID)
+    session = await init_session(APP_NAME, USER_ID, session_id)
     
     print(f"Session created: App='{APP_NAME}', User='{USER_ID}', Session='{session_id}'")
     
     runner = Runner(agent=draft_agent, app_name=APP_NAME,   # Associates runs with our app
     session_service=session_service)  # Use our session management
     
-    draft_response = await call_agent_async(f"Optimize this: {user_input}.",
+    draft_prompt = f"Optimize this: {user_input}."
+    draft_response = await call_agent_async(draft_prompt,
                                             runner=runner, 
                                             user_id=USER_ID, 
-                                            session_id=SESSION_ID)
+                                            session_id=session_id)
+    token_counts = calculate_prompt_response_tokens(draft_prompt, draft_response)
+    input_tokens += token_counts["input_tokens"]
+    output_tokens += token_counts["output_tokens"]
     current_draft = draft_response
     
     print(f"\nInitial Draft: {current_draft}")
@@ -151,19 +167,27 @@ async def execute_adk_optimization(user_input: str, max_iterations: int = 3, ses
     while iterations < max_iterations:
         # Draft -> Critic
         runner.agent = critic_agent
-        critic_response = await call_agent_async(f"Critique this draft: {current_draft}",
+        critic_prompt = f"Critique this draft: {current_draft}"
+        critic_response = await call_agent_async(critic_prompt,
                                                  runner=runner,
                                                     user_id=USER_ID,
-                                                    session_id=SESSION_ID)
+                                                                     session_id=session_id)
+        token_counts = calculate_prompt_response_tokens(critic_prompt, critic_response)
+        input_tokens += token_counts["input_tokens"]
+        output_tokens += token_counts["output_tokens"]
         
         print(f"\nCritic Feedback: {critic_response}")
         
         # Critic -> Assess
         runner.agent = assessment_agent
-        assessment = await call_agent_async(f"Assess this critique: {critic_response}",
+        assessment_prompt = f"Assess this critique: {critic_response}"
+        assessment = await call_agent_async(assessment_prompt,
                                                  runner=runner,
                                                     user_id=USER_ID,
-                                                    session_id=SESSION_ID)
+                                                                     session_id=session_id)
+        token_counts = calculate_prompt_response_tokens(assessment_prompt, assessment)
+        input_tokens += token_counts["input_tokens"]
+        output_tokens += token_counts["output_tokens"]
         print(f"\nAssessment: {assessment}")
         
         assessment_upper = assessment.upper()
@@ -172,10 +196,14 @@ async def execute_adk_optimization(user_input: str, max_iterations: int = 3, ses
         
         # 'needs_improvement' -> Revise
         runner.agent = revise_agent
-        revise_response = await call_agent_async(f"Revise the draft: {current_draft} based on this critique: {critic_response}",
+        revise_prompt = f"Revise the draft: {current_draft} based on this critique: {critic_response}"
+        revise_response = await call_agent_async(revise_prompt,
                                                  runner=runner,
                                                     user_id=USER_ID,
-                                                    session_id=SESSION_ID)
+                                                                     session_id=session_id)
+        token_counts = calculate_prompt_response_tokens(revise_prompt, revise_response)
+        input_tokens += token_counts["input_tokens"]
+        output_tokens += token_counts["output_tokens"]
         print(f"\nRevised Draft: {revise_response}")
     
         current_draft = revise_response
@@ -193,8 +221,14 @@ async def execute_adk_optimization(user_input: str, max_iterations: int = 3, ses
     print(f"Last Update (`last_update_time`): {session.last_update_time:.2f}")
     print(f"---------------------------------")
 
-
     latency = round(time.time() - start_time, 2)
+
+    print("--- Demo Metrics ---")
+    print(f"Input Tokens:  {input_tokens}")
+    print(f"Output Tokens: {output_tokens}")
+    print(f"Revision Count: {iterations}")
+    print(f"Latency (s):    {latency}")
+    print("--------------------")
     
     
-    return current_draft, latency
+    return current_draft, latency, input_tokens, output_tokens

@@ -256,6 +256,61 @@ class TokenCounter:
         return token_count
 
 
+def count_text_tokens(text: str, model: str = "gpt-4o-mini") -> int:
+    """Count tokens for a single text string."""
+    return TokenCounter(model).count_tokens(text or "")
+
+
+def calculate_prompt_response_tokens(
+    prompt_text: str,
+    response_text: str,
+    model: str = "gpt-4o-mini",
+) -> Dict[str, int]:
+    """Return input/output token counts for a prompt-response pair."""
+    return {
+        "input_tokens": count_text_tokens(prompt_text, model),
+        "output_tokens": count_text_tokens(response_text, model),
+    }
+
+
+def calculate_latency_seconds(start_time: float, end_time: Optional[float] = None) -> float:
+    """Calculate elapsed latency in seconds, rounded to 2 decimals."""
+    if end_time is None:
+        end_time = __import__("time").time()
+    return round(end_time - start_time, 2)
+
+
+def count_revision_history(revision_history: Optional[list]) -> int:
+    """Count stored revisions in the current session history."""
+    return len(revision_history or [])
+
+
+def calculate_token_usage(result: Optional[Dict[str, Any]]) -> int:
+    """Extract token usage from a provider result payload."""
+    if not result:
+        return 0
+
+    for key in ("total_tokens", "token_usage", "tokens"):
+        value = result.get(key)
+        if isinstance(value, int):
+            return value
+
+    return 0
+
+
+def build_demo_metrics(
+    start_time: float,
+    result: Optional[Dict[str, Any]] = None,
+    revision_history: Optional[list] = None,
+) -> Dict[str, Any]:
+    """Build a standard metrics payload for demo responses."""
+    return {
+        "latency_seconds": calculate_latency_seconds(start_time),
+        "token_usage": calculate_token_usage(result),
+        "revision_count": count_revision_history(revision_history),
+    }
+
+
 def get_api_key(service: str) -> str:
     """
     Get API key for specified service.

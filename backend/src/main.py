@@ -2,10 +2,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from src.api.routers.router import router
+from src.middleware.error_middleware import register_error_middleware
   
 load_dotenv()
 
 app = FastAPI(title="Prompt Optimizer Enterprise API")
+
+register_error_middleware(app)
 
 # Allow the React frontend to communicate with this API
 app.add_middleware(

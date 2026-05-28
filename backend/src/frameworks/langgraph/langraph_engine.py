@@ -5,7 +5,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import START, END, StateGraph
 from langgraph.checkpoint.memory import MemorySaver  
 from langgraph.graph.message import add_messages
-from src.utils.config import get_config
+from src.utils.config import get_config, calculate_prompt_response_tokens
 from src.utils.llm_services import create_llm_provider
 
 # Initialize configurations
@@ -30,6 +30,8 @@ class ReflectionState(TypedDict):
     iteration: int
     max_iterations: int
     total_tokens: int
+    input_tokens: int
+    output_tokens: int
 
 async def draft_node(state: ReflectionState):
     """Generate initial draft response."""
@@ -55,10 +57,16 @@ async def draft_node(state: ReflectionState):
     )
     print(f"\n{response['response'][:300]}...")
     print(f"\n[Tokens: {response['total_tokens']}, Latency: {response['latency_ms']}ms]")
+    token_counts = calculate_prompt_response_tokens(
+        f"Query: {state['query']}\n\nPrevious Chats: {state['revision_history']}",
+        response["response"],
+    )
 
     return {
         "current_draft": response["response"],
         "total_tokens": state["total_tokens"] + response["total_tokens"],
+        "input_tokens": state["input_tokens"] + token_counts["input_tokens"],
+        "output_tokens": state["output_tokens"] + token_counts["output_tokens"],
     }
     
 
@@ -100,11 +108,21 @@ async def critic_node(state: ReflectionState):
 
     print(f"\n{response['response'][:300]}...")
     print(f"\n[Tokens: {response['total_tokens']}, Latency: {response['latency_ms']}ms]")
+    token_counts = calculate_prompt_response_tokens(
+        (
+            f"Original Question: {state['query']}\n\n"
+            f"Draft Response: {state['current_draft']}\n\n"
+            f"Please provide a critical review with specific improvement suggestions."
+        ),
+        response["response"],
+    )
 
     return {
         "critique": response["response"],
         "iteration": iteration,
         "total_tokens": state["total_tokens"] + response["total_tokens"],
+        "input_tokens": state["input_tokens"] + token_counts["input_tokens"],
+        "output_tokens": state["output_tokens"] + token_counts["output_tokens"],
     }
     
 async def assessment_node(state: ReflectionState):
@@ -137,6 +155,16 @@ async def assessment_node(state: ReflectionState):
 
     print(f"\n{response['response'][:300]}...")
     print(f"\n[Tokens: {response['total_tokens']}, Latency: {response['latency_ms']}ms]")
+    token_counts = calculate_prompt_response_tokens(
+        (
+            f"Original question: {state['query']}\n\n"
+            f"Draft response (excerpt): {state['current_draft'][:500]}\n\n"
+            f"Critique: {state['critique']}\n\n"
+            f"Is the draft already sufficient based on this critique? "
+            f"Use SUFFICIENT and REASONING as specified."
+        ),
+        response["response"],
+    )
     
     text = response["response"].strip().upper()
     sufficient = "SUFFICIENT: YES" in text or "SUFFICIENT:YES" in text
@@ -151,6 +179,8 @@ async def assessment_node(state: ReflectionState):
     return {
         "is_sufficient": sufficient,
         "total_tokens": state["total_tokens"] + response["total_tokens"],
+        "input_tokens": state["input_tokens"] + token_counts["input_tokens"],
+        "output_tokens": state["output_tokens"] + token_counts["output_tokens"],
     }
 
 
@@ -190,11 +220,22 @@ async def revise_node(state: ReflectionState) -> dict:
 
     print(f"\n{response['response'][:300]}...")
     print(f"\n[Tokens: {response['total_tokens']}, Latency: {response['latency_ms']}ms]")
+    token_counts = calculate_prompt_response_tokens(
+        (
+            f"Original Question: {state['query']}\n\n"
+            f"Your Draft: {state['current_draft']}\n\n"
+            f"Critique Feedback: {state['critique']}\n\n"
+            f"Please provide an improved response that addresses all feedback points."
+        ),
+        response["response"],
+    )
 
     return {
         "current_draft": response["response"],
         "revision_history": [response["response"]],  # Annotated[list] appends across iterations
         "total_tokens": state["total_tokens"] + response["total_tokens"],
+        "input_tokens": state["input_tokens"] + token_counts["input_tokens"],
+        "output_tokens": state["output_tokens"] + token_counts["output_tokens"],
     }
     
 def should_continue(state: ReflectionState) -> str:
@@ -221,6 +262,20 @@ workflow.add_edge("Revise", "Critic")
 
 langgraph_app = workflow.compile(checkpointer=checkpointer)
 
+
+def clear_langgraph_session(session_id: str) -> bool:
+    """Clear a single LangGraph thread from the in-memory checkpoint store."""
+    try:
+        if session_id in checkpointer.storage:
+            del checkpointer.storage[session_id]
+
+        stale_write_keys = [key for key in list(checkpointer.writes.keys()) if key[0] == session_id]
+        for key in stale_write_keys:
+            del checkpointer.writes[key]
+        return True
+    except Exception:
+        return False
+
 async def execute_langgraph_optimization(user_input: str, max_iterations: int = 3, session_id: str = SESSION_ID):
     """Run the LangGraph workflow to optimize a prompt.
 
@@ -238,7 +293,16 @@ async def execute_langgraph_optimization(user_input: str, max_iterations: int = 
         "iteration": 0,
         "max_iterations": max_iterations,
         "total_tokens": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
     }
     result = await langgraph_app.ainvoke(initial_state, config)
     latency = round(time.time() - start_time, 2)
-    return result.get("current_draft", ""), latency
+    revision_count = len(result.get("revision_history", []))
+    print("--- Demo Metrics ---")
+    print(f"Input Tokens:  {result.get('input_tokens', 0)}")
+    print(f"Output Tokens: {result.get('output_tokens', 0)}")
+    print(f"Revision Count: {revision_count}")
+    print(f"Latency (s):    {latency}")
+    print("--------------------")
+    return result.get("current_draft", ""), latency, result.get("input_tokens", 0), result.get("output_tokens", 0)
