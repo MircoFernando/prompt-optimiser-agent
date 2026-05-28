@@ -3,12 +3,21 @@ import time
 from typing import TypedDict, Literal, Annotated
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import START, END, StateGraph
+from langgraph.checkpoint.memory import MemorySaver
 from src.utils.config import get_config
 from src.utils.llm_services import create_llm_provider
 
 # Initialize configurations
 config = get_config()
 llm = create_llm_provider()
+
+# Initialize the checkpointer
+memory = MemorySaver()
+
+# Define constants for identifying the interaction context
+APP_NAME = "propmt_optimizer_app"
+USER_ID = "user_1"
+SESSION_ID = "session_001" # Using a fixed ID for simplicity
 
 class ReflectionState(TypedDict):
     query: str
@@ -208,13 +217,15 @@ workflow.add_conditional_edges("Assess", should_continue, {
 })
 workflow.add_edge("Revise", "Critic")
 
-langgraph_app = workflow.compile()
+langgraph_app = workflow.compile(checkpoint_saver=memory)
 
-async def execute_langgraph_optimization(user_input: str, max_iterations: int = 3):
+async def execute_langgraph_optimization(user_input: str, max_iterations: int = 3, session_id: str = SESSION_ID):
     """Run the LangGraph workflow to optimize a prompt.
 
     Returns (optimized_text, latency_seconds)
     """
+    config = {"configurable": {"thread_id": session_id}}
+    
     start_time = time.time()
     initial_state = {
         "query": user_input,
