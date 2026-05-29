@@ -16,6 +16,11 @@ session_service = InMemorySessionService()
 APP_NAME = "propmt_optimizer_app"
 USER_ID = "user_1"
 SESSION_ID = "session_001" # Using a fixed ID for simplicity
+
+agent_config = types.GenerateContentConfig(
+    max_output_tokens=512,  # Caps the response generation length
+    temperature=0.2          # Low temperature ensures focused prompt generation
+)
 # 
 # Define Agents
 draft_agent = Agent(name="Generator", 
