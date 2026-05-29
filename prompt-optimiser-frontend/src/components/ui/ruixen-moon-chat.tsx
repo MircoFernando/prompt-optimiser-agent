@@ -11,7 +11,6 @@ import {
   CircleUserRound,
   ArrowUpIcon,
   Paperclip,
-  PlusIcon,
   Code2,
   Palette,
   Layers,
