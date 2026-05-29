@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // Define the base URL pointing to your local FastAPI server
-const API_BASE_URL = 'http://127.0.0.1:8000/api/v1/optimize';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL 
 
 // TypeScript Interfaces to enforce type safety across your frontend
 export interface OptimizationRequest {
