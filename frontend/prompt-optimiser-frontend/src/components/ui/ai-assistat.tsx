@@ -11,6 +11,8 @@ const AIMessageBar = () => {
   const [sessionId] = useState(() => `session_${Math.random().toString(36).substring(2, 11)}`);
   const [promptCount, setPromptCount] = useState<number>(0);
 
+  
+
   const ADKOptimize = async (prompt: string): Promise<OptimizationResponse> => {
     try {
       return await promptServiceADK.optimize({
@@ -126,13 +128,13 @@ const AIMessageBar = () => {
       setIsTyping(true);
       setTimeout(() => {
         setIsTyping(false);
-        setMessages((prev) => [...prev, { text: "Hi there! I'm a Prompt optimizing agent. Tell me what you want to do?", isUser: false }]);
+        setMessages((prev) => [...prev, { text: "Hi there! I'm a Prompt optimizing agent. Tell me what you want to do? (Made by Mirco)", isUser: false }]);
       }, 800);
     } else if (cleanMsg.includes("help")) {
       setIsTyping(true);
       setTimeout(() => {
         setIsTyping(false);
-        setMessages((prev) => [...prev, { text: "I'm here to help! Send me your task and I'll optimize the prompt rules for you.", isUser: false }]);
+        setMessages((prev) => [...prev, { text: "I'm here to help! Send me your task and I'll optimize the prompt rules for you. (Made by Mirco)", isUser: false }]);
       }, 800);
     } else if (cleanMsg.includes("thank you")) {
       setIsTyping(true);
@@ -144,7 +146,7 @@ const AIMessageBar = () => {
       setIsTyping(true);
       setTimeout(() => {
         setIsTyping(false);
-        setMessages((prev) => [...prev, { text: "I'm a dual-engine benchmarking assistant designed to run iterative multi-agent reflection loops via Google ADK and LangGraph.", isUser: false }]);
+        setMessages((prev) => [...prev, { text: "I'm a dual-engine benchmarking assistant designed to run iterative multi-agent reflection loops via Google ADK and LangGraph. (Made by Mirco)", isUser: false }]);
       }, 800);
     } else {
       // Execute live dual-framework optimization loop if no conversational strings match
@@ -184,8 +186,10 @@ const AIMessageBar = () => {
             <div className="flex h-full flex-col items-center justify-center text-center">
               <Sparkles className="mb-4 h-12 w-12 text-indigo-400 animate-pulse" />
               <h3 className="mb-2 text-xl text-indigo-200">System Prompt Optimization Engine</h3>
-              <p className="max-w-xs text-sm text-slate-400">
-                Submit a system instruction concept to trigger the 4-agent benchmark evaluation loop.
+              <p className="max-w-2xl text-sm text-slate-400">
+                Submit a system instruction concept to trigger the 4-agent benchmark evaluation loop. <br />
+                <span className="text-[12px]">Try asking: "Write a prompt to generate a creative story about a space adventure." or "How can I optimize a prompt for better AI responses?".</span><br />
+                <span className="text-[10px] italic">(This demo is built by Mirco Fernando. Check out the GitHub repo for more details!)</span>
               </p>
             </div>
           ) : (
