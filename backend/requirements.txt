@@ -12,6 +12,7 @@ langchain-google-genai==1.0.7
 # Environment / config
 python-dotenv==1.0.1
 PyYAML>=6.0.1
+deprecated==1.2.14
 
 # LLM & tokenization
 openai>=1.12.0
