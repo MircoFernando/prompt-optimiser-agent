@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Send, Sparkles, Loader2 } from "lucide-react";
-import { promptServiceADK, promptServiceLangGraph, type OptimizationResponse } from "@/services/promptService";
+import { promptServiceADK, promptServiceLangGraph, promptServiceSession, type OptimizationResponse } from "@/services/promptService";
 
 const AIMessageBar = () => {
   const [input, setInput] = useState<string>("");
@@ -9,6 +9,7 @@ const AIMessageBar = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isFocused, setIsFocused] = useState<boolean>(false);
   const [sessionId] = useState(() => `session_${Math.random().toString(36).substring(2, 11)}`);
+  const [promptCount, setPromptCount] = useState<number>(0);
 
   const ADKOptimize = async (prompt: string): Promise<OptimizationResponse> => {
     try {
@@ -59,6 +60,9 @@ const AIMessageBar = () => {
   const handleOptimisation = async (userMessage: string) => {
     setIsTyping(true);
     try {      
+      const nextPromptCount = promptCount + 1;
+      setPromptCount(nextPromptCount);
+
       // 1. Fire BOTH backend requests over the network at the exact same instant
       const adkPromise = ADKOptimize(userMessage);
       const langGraphPromise = LangGraphOptimize(userMessage);
@@ -100,6 +104,14 @@ const AIMessageBar = () => {
         }
       ]);
 
+      if (nextPromptCount === 3) {
+        try {
+          await promptServiceSession.clear({ session_id: sessionId });
+        } catch (error) {
+          console.error("Error clearing session on third prompt:", error);
+        }
+      }
+
     } catch (error) {
       console.error("Error during parallel optimization workflow:", error);
     } finally {
@@ -140,7 +152,7 @@ const AIMessageBar = () => {
     }
   };
 
-  const handleSubmit = (e?: React.FormEvent) => {
+  const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (input.trim() === "" || isTyping) return;
     
@@ -148,7 +160,7 @@ const AIMessageBar = () => {
     setMessages((prev) => [...prev, { text: userMessage, isUser: true }]);
     setInput("");
     
-    simulateResponse(userMessage);
+    await simulateResponse(userMessage);
   };
 
   // Auto-scroll anchor adjustment

@@ -18,6 +18,15 @@ export interface OptimizationResponse {
     output_tokens: number;
 }
 
+export interface SessionClearRequest {
+  session_id: string;
+}
+
+export interface SessionClearResponse {
+  detail: string;
+  session_id: string;
+}
+
 // 
 export const promptServiceADK = {
   /**
@@ -74,5 +83,17 @@ export const promptServiceLangGraph = {
       }
       throw new Error(detail || 'Failed to connect to the prompt optimization backend.', { cause: error });
     }
+  }
+};
+
+export const promptServiceSession = {
+  clear: async (payload: SessionClearRequest): Promise<SessionClearResponse> => {
+    const response = await axios.post<SessionClearResponse>(
+      `${API_BASE_URL}/session/clear`,
+      {
+        session_id: payload.session_id,
+      }
+    );
+    return response.data;
   }
 };

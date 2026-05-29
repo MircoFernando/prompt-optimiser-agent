@@ -17,10 +17,10 @@ APP_NAME = "propmt_optimizer_app"
 USER_ID = "user_1"
 SESSION_ID = "session_001" # Using a fixed ID for simplicity
 
-agent_config = types.GenerateContentConfig(
-    max_output_tokens=512,  # Caps the response generation length
-    temperature=0.2          # Low temperature ensures focused prompt generation
-)
+# agent_config = types.GenerateContentConfig(
+#     max_output_tokens=512,  # Caps the response generation length
+#     temperature=0.2          # Low temperature ensures focused prompt generation
+# )
 # 
 # Define Agents
 draft_agent = Agent(name="Generator", 
@@ -41,7 +41,7 @@ draft_agent = Agent(name="Generator",
             "- Do not include conversational filler like Here is your prompt or I have optimized this."
             "-Do not provide harmful, unethical, or biased content. Always adhere to ethical guidelines. "
             "- Do not wrap the output in markdown code blocks (```) unless the prompt itself requires them.",
-            model_args={"generation_config": agent_config})
+            )
 
 
 critic_agent = Agent(name="Critic", model="gemini-2.5-flash", 
@@ -64,7 +64,7 @@ critic_agent = Agent(name="Critic", model="gemini-2.5-flash",
             "Do NOT rewrite the prompt for them. "
             "Do NOT include conversational filler like Here is my feedback. "
             "Output ONLY the bulleted list of required fixes.",
-            model_args={"generation_config": agent_config})
+            )
 
 
 assessment_agent = Agent(name="Assessor", model="gemini-2.5-flash", 
@@ -74,7 +74,7 @@ assessment_agent = Agent(name="Assessor", model="gemini-2.5-flash",
             "Respond in exactly this format (no other text):\n"
             "SUFFICIENT: YES or NO\n"
             "REASONING: <one short sentence>",
-            model_args={"generation_config": agent_config})
+            )
 
 revise_agent = Agent(name="Reviser", model="gemini-2.5-flash", 
                      description="You are a diligent assistant responsible for revising the prompt draft based on the Critic's feedback. Your task is to take the current draft and the specific improvement suggestions from the Critic and produce a new, improved version of the prompt that addresses all the identified issues while adhering to best practices in prompt engineering.",
@@ -95,7 +95,7 @@ revise_agent = Agent(name="Reviser", model="gemini-2.5-flash",
             "- Output ONLY the newly revised prompt text."
             "- Do NOT output any conversational filler (e.g., Here is the revised version, I have applied the feedback)."
             "- Do NOT include the critic's feedback in your output.",
-            model_args={"generation_config": agent_config})
+            )
 
 
 async def call_agent_async(query: str, runner, user_id, session_id) -> str:
