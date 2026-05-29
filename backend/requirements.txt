@@ -1,17 +1,18 @@
-# Web Framework & Server
+# Core web framework
 fastapi==0.115.0
 uvicorn==0.34.0
 pydantic==2.7.4
 
-# AI Orchestration Engines
+# AI orchestration & LLM integrations
 google-adk==0.1.0
+google-genai
 langgraph==0.1.14
 langchain-google-genai==1.0.7
 
-# Environment Management
+# Environment / config
 python-dotenv==1.0.1
 PyYAML>=6.0.1
 
-# Core LLM and Embedding
+# LLM & tokenization
 openai>=1.12.0
 tiktoken>=0.5.2

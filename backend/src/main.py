@@ -9,14 +9,14 @@ load_dotenv()
 
 app = FastAPI(title="Prompt Optimizer Enterprise API")
 
-FRONT_END_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+FRONT_END_URL = os.getenv("FRONTEND_URL")
 
 register_error_middleware(app)
 
 # Allow the React frontend to communicate with this API
 app.add_middleware(
 CORSMiddleware,
-allow_origins=[FRONT_END_URL, "http://localhost:3000"],
+allow_origins=[FRONT_END_URL],
 allow_credentials=True,
 allow_methods=["*"],
 allow_headers=["*"],
