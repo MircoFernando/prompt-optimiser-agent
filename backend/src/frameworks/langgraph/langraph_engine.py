@@ -299,7 +299,7 @@ async def execute_langgraph_optimization(user_input: str, max_iterations: int = 
     result = await langgraph_app.ainvoke(initial_state, config)
     latency = round(time.time() - start_time, 2)
     revision_count = len(result.get("revision_history", []))
-    print("--- Demo Metrics ---")
+    print("--- Demo Metrics (LangGraph) ---")
     print(f"Input Tokens:  {result.get('input_tokens', 0)}")
     print(f"Output Tokens: {result.get('output_tokens', 0)}")
     print(f"Revision Count: {revision_count}")

@@ -2,7 +2,7 @@
 # Required in .env: OPENROUTER_API_KEY (if provider: openrouter) or OPENAI_API_KEY (if openai)
 
 provider:
-  default: openai   # openrouter | openai
+  default: openai  # openrouter | openai
   tier: general        # general | strong | reason
   openrouter_base_url: https://openrouter.ai/api/v1
 

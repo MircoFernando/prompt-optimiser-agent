@@ -11,6 +11,7 @@ from typing import Dict, Any, Optional
 from pathlib import Path
 from dotenv import load_dotenv
 import tiktoken
+from google.genai.local_tokenizer import LocalTokenizer
 
 # Load environment variables
 load_dotenv()
@@ -87,11 +88,12 @@ class ConfigManager:
             with open(models_file, "r") as f:
                 self._models = yaml.safe_load(f) or {}
         provider = (self.config.get("provider") or {}).get("default", "openrouter")
+        model_provider = "google" if provider == "gemini" else provider
         tier = (self.config.get("provider") or {}).get("tier", "general")
         embed_tier = (self.config.get("embedding") or {}).get("tier", "default")
         # Resolve chat model
         chat_model = (
-            (self._models.get(provider) or {}).get("chat") or {}
+            (self._models.get(model_provider) or {}).get("chat") or {}
         ).get(tier)
         if chat_model:
             self.config["model"] = chat_model
@@ -156,6 +158,9 @@ class ConfigManager:
         if provider == "openrouter":
             if not os.getenv("OPENROUTER_API_KEY"):
                 missing.append("OPENROUTER_API_KEY")
+        elif provider == "gemini":
+            if not os.getenv("GOOGLE_API_KEY"):
+                missing.append("GOOGLE_API_KEY")
         else:
             if not os.getenv("OPENAI_API_KEY"):
                 missing.append("OPENAI_API_KEY")
@@ -164,7 +169,7 @@ class ConfigManager:
         if missing:
             raise EnvironmentError(
                 f"Missing required environment variables: {', '.join(missing)}\n"
-                "Set them in .env (e.g. OPENROUTER_API_KEY or OPENAI_API_KEY, TAVILY_API_KEY)."
+                "Set them in .env (e.g. OPENROUTER_API_KEY, GOOGLE_API_KEY, or OPENAI_API_KEY, plus TAVILY_API_KEY)."
             )
             
     def get(self, key_path: str, default: Any = None) -> Any:
@@ -212,11 +217,18 @@ class TokenCounter:
             model: Model name for tokenizer selection
         """
         try:
-            # Get appropriate encoding for model
-            if "gpt-4" in model:
+            # Get appropriate encoding for model. Add support for Gemini models
+            m = (model or "").lower()
+            if "gpt-4" in m:
                 self.encoding = tiktoken.encoding_for_model("gpt-4")
-            elif "gpt-3.5" in model:
+            elif "gpt-3.5" in m:
                 self.encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
+            elif "gemini" in m:
+                # tiktoken may not know Gemini model names; attempt lookup then fallback
+                try:
+                    self.encoding = tiktoken.encoding_for_model(model)
+                except Exception:
+                    self.encoding = tiktoken.get_encoding("cl100k_base")
             else:
                 self.encoding = tiktoken.get_encoding("cl100k_base")
         except Exception:
@@ -264,7 +276,7 @@ def count_text_tokens(text: str, model: str = "gpt-4o-mini") -> int:
 def calculate_prompt_response_tokens(
     prompt_text: str,
     response_text: str,
-    model: str = "gpt-4o-mini",
+    model: str = "gemimi-2.5-flash-lite",
 ) -> Dict[str, int]:
     """Return input/output token counts for a prompt-response pair."""
     return {
@@ -328,6 +340,7 @@ def get_api_key(service: str) -> str:
         "openai": "OPENAI_API_KEY",
         "openrouter": "OPENROUTER_API_KEY",
         "tavily": "TAVILY_API_KEY",
+        "gemini": "GOOGLE_API_KEY",
     }
     env_var = key_map.get(service.lower())
     if not env_var:

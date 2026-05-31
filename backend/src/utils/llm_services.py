@@ -9,6 +9,8 @@ import logging
 import time
 from typing import Any, Callable, Dict, List, Optional
 
+from google import genai
+from google.genai import types
 from openai import (
     APIConnectionError,
     APITimeoutError,
@@ -326,6 +328,106 @@ class DummyLocalProvider(LLMProvider):
         }
 
 
+class GeminiProvider(LLMProvider):
+    """Adapter for Gemini-compatible LLMs (e.g. Google's Gemini).
+
+    This provides a minimal, OpenAI-compatible interface so the rest of the codebase
+    can create and use a `GeminiProvider` without depending on a separate SDK.
+    Replace the underlying client with a real Gemini/Vertex SDK if/when available.
+    """
+
+    def __init__(self, model: str = "gemini-2.5-flash-lite", temperature: float = 0.2, max_tokens: int = 512):
+        self.api_key = get_api_key("gemini")
+        self.client = genai.Client(api_key=self.api_key)
+        self.model = model
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.token_counter = TokenCounter(self.model)
+
+    def generate(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        start_time = time.time()
+        config = types.GenerateContentConfig(
+            temperature=temperature if temperature is not None else self.temperature,
+            maxOutputTokens=max_tokens or self.max_tokens,
+            systemInstruction=system_prompt,
+            **kwargs,
+        )
+        response = _call_with_retry(lambda: self.client.models.generate_content(
+            model=self.model,
+            contents=prompt,
+            config=config,
+        ))
+        latency_ms = int((time.time() - start_time) * 1000)
+        response_text = getattr(response, "text", None)
+        if response_text is None:
+            candidates = getattr(response, "candidates", None) or []
+            if candidates:
+                content = getattr(candidates[0], "content", None)
+                parts = getattr(content, "parts", None) or []
+                if parts:
+                    response_text = getattr(parts[0], "text", None)
+        return {
+            "response": response_text,
+            "prompt_tokens": getattr(getattr(response, "usage_metadata", None), "prompt_token_count", None),
+            "completion_tokens": getattr(getattr(response, "usage_metadata", None), "candidates_token_count", None),
+            "total_tokens": getattr(getattr(response, "usage_metadata", None), "total_token_count", None),
+            "latency_ms": latency_ms,
+            "model": self.model,
+        }
+
+    def generate_with_tools(
+        self,
+        prompt: str,
+        tools: List[Dict[str, Any]],
+        system_prompt: Optional[str] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        # The internal tool registry currently emits OpenAI-style tool definitions.
+        # Gemini tool calling requires Google tool objects, so keep the call path
+        # safe and explicit instead of silently misinterpreting the schema.
+        start_time = time.time()
+        config = types.GenerateContentConfig(
+            temperature=self.temperature,
+            maxOutputTokens=self.max_tokens,
+            systemInstruction=system_prompt,
+            **kwargs,
+        )
+        if tools:
+            raise NotImplementedError(
+                "GeminiProvider.generate_with_tools expects Google GenAI tool objects, not OpenAI tool definitions."
+            )
+        response = _call_with_retry(lambda: self.client.models.generate_content(
+            model=self.model,
+            contents=prompt,
+            config=config,
+        ))
+        latency_ms = int((time.time() - start_time) * 1000)
+        response_text = getattr(response, "text", None)
+        if response_text is None:
+            candidates = getattr(response, "candidates", None) or []
+            if candidates:
+                content = getattr(candidates[0], "content", None)
+                parts = getattr(content, "parts", None) or []
+                if parts:
+                    response_text = getattr(parts[0], "text", None)
+        return {
+            "response": response_text,
+            "tool_calls": None,
+            "prompt_tokens": getattr(getattr(response, "usage_metadata", None), "prompt_token_count", None),
+            "completion_tokens": getattr(getattr(response, "usage_metadata", None), "candidates_token_count", None),
+            "total_tokens": getattr(getattr(response, "usage_metadata", None), "total_token_count", None),
+            "latency_ms": latency_ms,
+            "model": self.model,
+        }
+
+
 class ToolRegistry:
     """
     Registry for external agent tools.
@@ -437,11 +539,13 @@ def create_llm_provider(config: Optional[Dict[str, Any]] = None) -> LLMProvider:
         model = config.get("model", "gpt-4o-mini")
         temperature = config.get("temperature", 0.2)
         max_tokens = config.get("max_tokens", 512)
-        provider = ((config.get("provider") or {}).get("default") or "openrouter") if isinstance(config.get("provider"), dict) else "openrouter"
-        openrouter_base = (config.get("provider") or {}).get("openrouter_base_url", "https://openrouter.ai/api/v1")
+        provider_value = config.get("provider")
+        provider = provider_value.get("default", "openrouter") if isinstance(provider_value, dict) else (provider_value or "openrouter")
+        openrouter_base = (provider_value or {}).get("openrouter_base_url", "https://openrouter.ai/api/v1") if isinstance(provider_value, dict) else "https://openrouter.ai/api/v1"
 
     if "dummy" in (model or "").lower():
         return DummyLocalProvider()
+
     if provider == "openrouter":
         return OpenRouterProvider(
             model=model or "openai/gpt-4o-mini",
@@ -449,9 +553,24 @@ def create_llm_provider(config: Optional[Dict[str, Any]] = None) -> LLMProvider:
             max_tokens=max_tokens,
             base_url=openrouter_base,
         )
-    if provider != "openai" and provider != "openrouter":
-        raise ValueError(f"Unknown provider: {provider}. Use openrouter or openai.")
-    # OpenAI when explicitly set to openai
+
+    if provider == "openai":
+        return OpenAIProvider(
+            model=model or "gpt-4o-mini",
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
+    if provider == "gemini":
+        return GeminiProvider(
+            model=model or "gemini-2.5-flash-lite",
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
+    if provider != "openai" and provider != "openrouter" and provider != "gemini":
+        raise ValueError(f"Unknown provider: {provider}. Use openrouter or openai or gemini.")
+
     return OpenAIProvider(
         model=(model or "gpt-4o-mini").replace("openai_compatible:", ""),
         temperature=temperature,
