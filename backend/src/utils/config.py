@@ -11,7 +11,6 @@ from typing import Dict, Any, Optional
 from pathlib import Path
 from dotenv import load_dotenv
 import tiktoken
-from google.genai.local_tokenizer import LocalTokenizer
 
 # Load environment variables
 load_dotenv()
